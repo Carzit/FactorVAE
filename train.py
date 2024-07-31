@@ -202,16 +202,15 @@ def parse_args():
 
 
 if __name__ == "__main__":
-    dataset = StockDataset(data_x_dir=r"C:\Users\C'heng\PycharmProjects\SWHY\data\test\alpha",
-                           data_y_dir=r"C:\Users\C'heng\PycharmProjects\SWHY\data\test\label",
+    dataset = StockDataset(data_x_dir=r"D:\PycharmProjects\SWHY\data\demo\alpha",
+                           data_y_dir=r"D:\PycharmProjects\SWHY\data\demo\label",
                            label_name="ret10")
-    train_set, val_set, test_set = dataset.serial_split([0.7, 0.2, 0.1])
-    train_set = StockSequenceDataset(train_set, seq_len=3)
-    val_set = StockSequenceDataset(val_set, 3)
-    test_set = StockSequenceDataset(test_set, 3)
+    train_set, val_set = dataset.serial_split([0.7, 0.3])
+    train_set = StockSequenceDataset(train_set, seq_len=5)
+    val_set = StockSequenceDataset(val_set, 5)
 
-    model = FactorVAE(input_size=5, num_gru_layers=3, gru_hidden_size=3, hidden_size=5, latent_size=2)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
+    model = FactorVAE(input_size=101, num_gru_layers=4, gru_hidden_size=32, hidden_size=16, latent_size=4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     loss_func = ObjectiveLoss(gamma=0.8)
 
     trainer = FactorVAETrainer(model=model,
@@ -219,7 +218,7 @@ if __name__ == "__main__":
                                optimizer=optimizer)
     trainer.load_dataset(train_set=train_set, val_set=val_set)
     
-    trainer.set_configs(max_epoches=20, sample_batch=5)
+    trainer.set_configs(max_epoches=20, sample_batch=200)
     print("start training...")
     trainer.train()
 
