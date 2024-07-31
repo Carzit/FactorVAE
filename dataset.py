@@ -1,7 +1,11 @@
 import os
+import sys
 import random
+import datetime
+import logging
+import argparse
 from numbers import Number
-from typing import List, Dict, Tuple, Optional, Literal, Union, Any
+from typing import List, Dict, Tuple, Optional, Literal, Union, Any, Callable
 
 import torch
 from torch.utils.data import Dataset
@@ -86,13 +90,53 @@ class StockSequenceDataset(Dataset):
         X_seq = torch.stack([self.stock_dataset[i][0] for i in range(index, index+self.seq_len)], dim=0)
         y = self.stock_dataset[index+self.seq_len-1][1]
         return X_seq, y
-    
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Data acquisition and dataset generation.")
+
+    parser.add_argument("--log_folder", type=str, default=os.curdir, help="Path of folder for log file. Default `.`")
+    parser.add_argument("--log_name", type=str, default="log.txt", help="Name of log file. Default `log.txt`")
+
+    parser.add_argument("--x_folder", type=str, required=True, help="Path of folder for x (alpha) data csv files")
+    parser.add_argument("--y_folder", type=str, required=True, help="Path of folder for y (label) data csv files")
+    parser.add_argument("--label_name", type=str, required=True, help="Target label name (col name in y files)")
+
+    parser.add_argument("--split_ratio", type=float, nargs=3, default=[0.7, 0.2, 0.1], help="Split ratio for train-validation-test. Default 0.7, 0.2, 0.1")
+    parser.add_argument("--train_seq_len", type=int, required=True, help="Sequence length (num of days) for train dataset")
+    parser.add_argument("--val_seq_len", type=int, default=None, help="Sequence length (num of days) for validation dataset. If not specified, default equal to train_seq_len.")
+    parser.add_argument("--test_seq_len", type=int, default=None, help="Sequence length (num of days) for test dataset. If not specified, default equal to train_seq_len.")
+
+    parser.add_argument("--save_path", type=str, required=True, help="Path to save the dataset dictionary.")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    dataset = StockDataset(data_x_dir=r"C:\Users\C'heng\PycharmProjects\SWHY\data\demo\preprocess\alpha",
-                           data_y_dir=r"C:\Users\C'heng\PycharmProjects\SWHY\data\demo\preprocess\label",
-                           label_name="ret10")
-    dataset_seq = StockSequenceDataset(dataset, 10)
-    print(dataset_seq[1])
+    args = parse_args()
+
+    log_folder = args.log_folder
+    log_name = args.log_name
+    if not os.path.exists(log_folder):
+        os.makedirs(log_folder)
+    
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - [%(levelname)s] : %(message)s',
+        handlers=[logging.FileHandler(os.path.join(log_folder, log_name)), logging.StreamHandler()])
+    
+    logging.debug(f"Command: {' '.join(sys.argv)}")
+    logging.debug(f"Params: {vars(args)}")
+
+    dataset = StockDataset(data_x_dir=args.x_folder,
+                           data_y_dir=args.y_folder,
+                           label_name=args.label_name)
+    train_set, val_set, test_set = dataset.serial_split(args.split_ratio)
+    train_set = StockSequenceDataset(train_set, seq_len=args.train_seq_len)
+    val_set = StockSequenceDataset(val_set, seq_len=args.val_seq_len or args.train_seq_len)
+    test_set = StockSequenceDataset(val_set, seq_len=args.test_seq_len or args.train_seq_len)
+
+    torch.save({"train": train_set, "val": val_set, "test": test_set}, args.save_path)
+
+    # python dataset.py --x_folder "C:\Users\C'heng\PycharmProjects\SWHY\data\test\alpha" --y_folder "C:\Users\C'heng\PycharmProjects\SWHY\data\test\label" --label_name "ret10" --train_seq_len 2 --save_path "dataset.pt"
 
 
 

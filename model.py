@@ -241,6 +241,8 @@ class FactorPredictor(nn.Module):
     
 class FactorVAE(nn.Module):
     """
+    Pytorch Implementation of FactorVAE: A Probabilistic Dynamic Factor Model Based on Variational Autoencoder for Predicting Cross-Sectional Stock Returns (https://ojs.aaai.org/index.php/AAAI/article/view/20369)
+
     Our model follows the encoder-decoder architecture of VAE, to learn an optimal factor model, which can reconstruct the cross-sectional stock returns by several factors well. As shown in Figure 3, with access to future stock returns, the encoder plays a role as an oracle, which can extract optimal factors from future data, called posterior factors, and then the decoder reconstructs future stock returns by the posterior factors. Specially, the factors in our model are regarded as the latent variables in VAE, with the capacity of modeling noisy data. 
     Concretely, this architecture contains three components: feature extractor, factor encoder and factor decoder.
     """

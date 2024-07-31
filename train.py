@@ -40,9 +40,9 @@ class FactorVAETrainer:
         self.hparams:Optional[dict]
 
         self.log_folder:str = "log"
-        self.sample_batch:int = 0
-        self.report_epoch:int = 1
-        self.save_epoch:int = 1
+        self.sample_per_batch:int = 0
+        self.report_per_epoch:int = 1
+        self.save_per_epoch:int = 1
         self.save_folder:str = os.curdir
         self.save_name:str = "Model"
         self.save_format:Literal[".pt", ".safetensors"] = ".pt"
@@ -82,10 +82,10 @@ class FactorVAETrainer:
                     max_epoches:int,
                     hparams:Optional[dict] = None,
                     log_folder:str = "log",
-                    sample_batch:int = 0,
-                    report_epoch:int=1,
-                    save_epoch:int=1,
-                    save_forder:str=os.curdir,
+                    sample_per_batch:int = 0,
+                    report_per_epoch:int=1,
+                    save_per_epoch:int=1,
+                    save_folder:str=os.curdir,
                     save_name:str="Model",
                     save_format:str=".pt"):
         
@@ -93,10 +93,10 @@ class FactorVAETrainer:
         self.hparams = hparams
         
         self.log_folder = log_folder
-        self.sample_batch = sample_batch
-        self.report_epoch = report_epoch
-        self.save_epoch = save_epoch
-        self.save_folder = save_forder
+        self.sample_per_batch = sample_per_batch
+        self.report_per_epoch = report_per_epoch
+        self.save_per_epoch = save_per_epoch
+        self.save_folder = save_folder
         self.save_name = save_name
         self.save_format = save_format
 
@@ -136,8 +136,8 @@ class FactorVAETrainer:
                 optimizer.step()
                 train_loss_list.append(train_loss.item())
                 
-                if self.sample_batch:
-                    if (batch+1) % self.sample_batch == 0:
+                if self.sample_per_batch:
+                    if (batch+1) % self.sample_per_batch == 0:
                         print(f"\n[Batch {batch+1}] \nX:{X} \ny:{y} \nloss:{train_loss.item()} \ny_hat:{y_hat} \nmu_prior:{mu_prior} \nsigma_prior:{sigma_prior} \nmu_posterior:{mu_posterior} \nsigma_posterior:{sigma_posterior}")
               
             # Record Train Loss Scalar
@@ -172,13 +172,13 @@ class FactorVAETrainer:
             writer.flush()
 
             # Specify print_per_epoch = 0 to unable print training information.
-            if self.report_epoch:
-                if (epoch+1) % self.report_epoch == 0:
+            if self.report_per_epoch:
+                if (epoch+1) % self.report_per_epoch == 0:
                     print('Epoch [{}/{}], Train Loss: {:.6f}, Validation Loss: {:.6f}'.format(epoch+1, self.max_epoches, train_loss_epoch, val_loss_epoch))
             
             # Specify save_per_epoch = 0 to unable save model. Only the final model will be saved.
-            if self.save_epoch:
-                if (epoch+1) % self.save_epoch == 0:
+            if self.save_per_epoch:
+                if (epoch+1) % self.save_per_epoch == 0:
                     model_name = f"{self.save_name}_epoch{epoch+1}"
                     self.save_checkpoint(save_folder=self.save_folder,
                                          save_name=model_name,
@@ -188,38 +188,92 @@ class FactorVAETrainer:
 
 
 def parse_args():
-    # TODO
-    parser = argparse.ArgumentParser(description="Distributed Data Normalizer.")
+    parser = argparse.ArgumentParser(description="FactorVAE Training.")
 
     parser.add_argument("--log_folder", type=str, default=os.curdir, help="Path of folder for log file. Default `.`")
     parser.add_argument("--log_name", type=str, default="log.txt", help="Name of log file. Default `log.txt`")
 
-    parser.add_argument("--data_folder", type=str, required=True, help="Path of folder for csv files")
-    parser.add_argument("--save_folder", type=str, default=None, help="Path of folder for Normalizer to save processed result. If not specified, files in data folder will be replaced.")
-    parser.add_argument("--mode", type=str, default="cs_zscore", help="Normalization mode, literally `cs_zscore`, `cs_rank`, `global_zscore`, `global_minmax` or `global_robust_zscore`. Default `cs_score`.")
+    parser.add_argument("--dataset_path", type=str, required=True, help="Path of dataset .pt file")
+    parser.add_argument("--checkpoint_path", type=str, default=None, help="Path of checkpoint")
+
+    parser.add_argument("--input_size", type=int, required=True, help="Input size of feature extractor, i.e. num of features.")
+    parser.add_argument("--num_gru_layers", type=int, required=True, help="Num of GRU layers in feature extractor.")
+    parser.add_argument("--gru_hidden_size", type=int, required=True, help="Hidden size of each GRU layer. num_gru_layers * gru_hidden_size i.e. the input size of FactorEncoder and Factor Predictor.")
+    parser.add_argument("--hidden_size", type=int, required=True, help="Hidden size of FactorVAE(Encoder, Pedictor and Decoder), i.e. num of portfolios.")
+    parser.add_argument("--latent_size", type=int, required=True, help="Latent size of FactorVAE(Encoder, Pedictor and Decoder), i.e. num of factors.")
+    parser.add_argument("--gru_dropout", type=float, default=0.1, help="Dropout probs in gru layers. Default 0.1")
+
+    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate for optimizer. Default 0.001")
+    parser.add_argument("--gamma", type=float, default=1, help="Gamma for KL Div in Objective Function Loss. Default 1")
+
+    parser.add_argument("--max_epoches", type=int, default=20, help="Max Epoches for train loop")
+    parser.add_argument("--sample_per_batch", type=int, default=0, help="Check X, y and all kinds of outputs per n batches in one epoch. Specify 0 to unable. Default 0")
+    parser.add_argument("--report_per_epoch", type=int, default=1, help="Report train loss and validation loss per n epoches. Specify 0 to unable. Default 1")
+
+    parser.add_argument("--save_per_epoch", type=int, default=1, help="Save model weights per n epoches. Specify 0 to unable. Default 1")
+    parser.add_argument("--save_folder", type=str, required=True, help="Folder to save model")
+    parser.add_argument("--save_name", type=str, default="Model", help="Model name. Default `Model`")
+    parser.add_argument("--save_format", type=str, default=".pt", help="File format of model to save, literally `.pt` or `.safetensors`. Default `.pt`")
 
     return parser.parse_args()
 
 
 if __name__ == "__main__":
-    dataset = StockDataset(data_x_dir=r"D:\PycharmProjects\SWHY\data\demo\alpha",
-                           data_y_dir=r"D:\PycharmProjects\SWHY\data\demo\label",
-                           label_name="ret10")
-    train_set, val_set = dataset.serial_split([0.7, 0.3])
-    train_set = StockSequenceDataset(train_set, seq_len=5)
-    val_set = StockSequenceDataset(val_set, 5)
+    args = parse_args()
 
-    model = FactorVAE(input_size=101, num_gru_layers=4, gru_hidden_size=32, hidden_size=16, latent_size=4)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    loss_func = ObjectiveLoss(gamma=0.8)
+    os.makedirs(args.log_folder, exist_ok=True)
+    os.makedirs(args.save_folder, exist_ok=True)
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - [%(levelname)s] : %(message)s',
+        handlers=[logging.FileHandler(os.path.join(args.log_folder, args.log_name)), logging.StreamHandler()])
+    
+    logging.debug(f"Command: {' '.join(sys.argv)}")
+    logging.debug(f"Params: {vars(args)}")
+
+    datasets:Dict[str, StockSequenceDataset] = torch.load(args.dataset_path)
+    train_set = datasets["train"]
+    val_set = datasets["val"]
+    test_set = datasets["test"]
+
+    model = FactorVAE(input_size=args.input_size, 
+                      num_gru_layers=args.num_gru_layers, 
+                      gru_hidden_size=args.gru_hidden_size, 
+                      hidden_size=args.hidden_size, 
+                      latent_size=args.latent_size,
+                      gru_drop_out=args.gru_dropout)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    loss_func = ObjectiveLoss(gamma=args.gamma)
+
+    hparams = {"input_size": args.input_size, 
+               "num_gru_layers": args.num_gru_layers, 
+               "gru_hidden_size": args.gru_hidden_size, 
+               "hidden_size": args.hidden_size, 
+               "latent_size": args.latent_size,
+               "gru_drop_out": args.gru_dropout,
+               "checkpoint": args.checkpoint_path,
+               "lr": args.lr,
+               "gamma": args.gamma}
 
     trainer = FactorVAETrainer(model=model,
                                loss_func=loss_func,
                                optimizer=optimizer)
     trainer.load_dataset(train_set=train_set, val_set=val_set)
-    
-    trainer.set_configs(max_epoches=20, sample_batch=200)
-    print("start training...")
+    if args.checkpoint_path is not None:
+        trainer.load_checkpoint(args.checkpoint_path)
+    trainer.set_configs(max_epoches=args.max_epoches,
+                        log_folder=args.log_folder,
+                        sample_per_batch=args.sample_per_batch,
+                        report_per_epoch=args.report_per_epoch,
+                        save_per_epoch=args.save_per_epoch,
+                        save_folder=args.save_folder,
+                        save_name=args.save_name,
+                        save_format=args.save_format,
+                        hparams=hparams
+                        )
+    logging.info("Training start...")
     trainer.train()
-
+    logging.info("Training complete.")
 
