@@ -25,9 +25,9 @@ class StockDataset(Dataset):
 
     def __getitem__(self, index) -> Tuple[torch.Tensor]:
         X = pd.read_csv(self.x_file_paths[index], index_col=[0,1,2])
-        X = torch.from_numpy(X.values).float()
+        X = torch.from_numpy(X.values).float().nan_to_num()
         y = pd.read_csv(self.y_file_paths[index], index_col=[0,1,2])[self.label_name]
-        y = torch.from_numpy(y.values).float()
+        y = torch.from_numpy(y.values).float().nan_to_num()
         return X, y
     
     def __len__(self):
@@ -132,11 +132,13 @@ if __name__ == "__main__":
     train_set, val_set, test_set = dataset.serial_split(args.split_ratio)
     train_set = StockSequenceDataset(train_set, seq_len=args.train_seq_len)
     val_set = StockSequenceDataset(val_set, seq_len=args.val_seq_len or args.train_seq_len)
-    test_set = StockSequenceDataset(val_set, seq_len=args.test_seq_len or args.train_seq_len)
+    test_set = StockSequenceDataset(test_set, seq_len=args.test_seq_len or args.train_seq_len)
 
     torch.save({"train": train_set, "val": val_set, "test": test_set}, args.save_path)
 
-    # python dataset.py --x_folder "C:\Users\C'heng\PycharmProjects\SWHY\data\test\alpha" --y_folder "C:\Users\C'heng\PycharmProjects\SWHY\data\test\label" --label_name "ret10" --train_seq_len 2 --save_path "dataset.pt"
+# python dataset.py --x_folder "D:\PycharmProjects\SWHY\data\preprocess\alpha" --y_folder "D:\PycharmProjects\SWHY\data\preprocess\label" --label_name "ret10" --train_seq_len 20 --save_path "D:\PycharmProjects\SWHY\data\preprocess\dataset.pt"
+
+# python dataset.py --x_folder "D:\PycharmProjects\SWHY\data\preprocess\alpha_cs_zscore" --y_folder "D:\PycharmProjects\SWHY\data\preprocess\label" --label_name "ret10" --train_seq_len 20 --save_path "D:\PycharmProjects\SWHY\data\preprocess\dataset_cs_zscore.pt"
 
 
 

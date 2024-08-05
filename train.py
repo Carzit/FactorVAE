@@ -8,6 +8,7 @@ from typing import List, Dict, Tuple, Optional, Literal, Union, Any, Callable
 
 from tqdm import tqdm
 from safetensors.torch import save_file, load_file
+from scipy.stats import pearsonr, spearmanr
 
 import torch
 import torch.nn as nn
@@ -15,18 +16,19 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from dataset import StockDataset, StockSequenceDataset
-from model import FactorVAE
+from nets import FactorVAE
 from loss import ObjectiveLoss
+from utils import str2bool
 
 class FactorVAETrainer:
     def __init__(self,
                  model:FactorVAE,
-                 loss_func:ObjectiveLoss,
-                 optimizer:torch.optim.Optimizer,
+                 loss_func:ObjectiveLoss = None,
+                 optimizer:torch.optim.Optimizer = None,
                  lr_scheduler:Optional[torch.optim.lr_scheduler.LRScheduler] = None,
                  device:torch.device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")) -> None:
         
-        self.model:nn.Module = model
+        self.model:FactorVAE = model
         self.loss_func:nn.Module = loss_func
         self.optimizer:nn.Module = optimizer
         self.lr_scheduler:Optional[torch.optim.lr_scheduler.LRScheduler] = lr_scheduler
@@ -138,7 +140,7 @@ class FactorVAETrainer:
                 
                 if self.sample_per_batch:
                     if (batch+1) % self.sample_per_batch == 0:
-                        print(f"\n[Batch {batch+1}] \nX:{X} \ny:{y} \nloss:{train_loss.item()} \ny_hat:{y_hat} \nmu_prior:{mu_prior} \nsigma_prior:{sigma_prior} \nmu_posterior:{mu_posterior} \nsigma_posterior:{sigma_posterior}")
+                        logging.debug(f"<Batch {batch+1}>  loss:{train_loss.item()} y_hat:{y_hat} mu_prior:{mu_prior} sigma_prior:{sigma_prior} mu_posterior:{mu_posterior} sigma_posterior:{sigma_posterior}")
               
             # Record Train Loss Scalar
             train_loss_epoch = sum(train_loss_list)/len(train_loss_list)
@@ -174,7 +176,7 @@ class FactorVAETrainer:
             # Specify print_per_epoch = 0 to unable print training information.
             if self.report_per_epoch:
                 if (epoch+1) % self.report_per_epoch == 0:
-                    print('Epoch [{}/{}], Train Loss: {:.6f}, Validation Loss: {:.6f}'.format(epoch+1, self.max_epoches, train_loss_epoch, val_loss_epoch))
+                    logging.info('Epoch [{}/{}], Train Loss: {:.6f}, Validation Loss: {:.6f}'.format(epoch+1, self.max_epoches, train_loss_epoch, val_loss_epoch))
             
             # Specify save_per_epoch = 0 to unable save model. Only the final model will be saved.
             if self.save_per_epoch:
@@ -186,6 +188,33 @@ class FactorVAETrainer:
 
         writer.close()
 
+    def eval(self, dataset, metric:Literal["MSE", "RMSE", "IC", "Rank_IC"]="IC"):
+        self.test_loader = DataLoader(dataset=dataset, 
+                                      batch_size=None,
+                                      shuffle=False)
+        match metric:
+            case "MSE":
+                eval_func = lambda y_pred, y: ((y_pred - y) ** 2).mean()
+            case "RMSE":
+                eval_func = lambda y_pred, y: ((y_pred - y) ** 2).mean() ** 0.5
+            case "IC":
+                eval_func = lambda y_pred, y: pearsonr(y_pred, y).statistic
+            case "Rank_IC":
+                eval_func = lambda y_pred, y: spearmanr(y_pred, y).statistic
+        
+        eval_scores:List[float] = []
+        model = self.model.to(device=self.device)
+        model.eval() # set eval mode to frozen layers like dropout
+        with torch.no_grad(): 
+            for batch, (X, y) in enumerate(tqdm(self.test_loader)):
+                X = X.to(device=self.device)
+                y = y.to(device=self.device)
+                y_pred, mu_prior, sigma_prior  = model.predict(x=X)
+
+                y = y.cpu().numpy()
+                y_pred = y_pred.cpu().numpy()
+                eval_scores.append(eval_func(y_pred=y_pred, y=y))
+        return sum(eval_scores) / len(eval_scores)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="FactorVAE Training.")
@@ -194,6 +223,7 @@ def parse_args():
     parser.add_argument("--log_name", type=str, default="log.txt", help="Name of log file. Default `log.txt`")
 
     parser.add_argument("--dataset_path", type=str, required=True, help="Path of dataset .pt file")
+    parser.add_argument("--shuffle", type=str2bool, default=True, help="Whether to shuffle dataloader. Default True")
     parser.add_argument("--checkpoint_path", type=str, default=None, help="Path of checkpoint")
 
     parser.add_argument("--input_size", type=int, required=True, help="Input size of feature extractor, i.e. num of features.")
@@ -260,7 +290,7 @@ if __name__ == "__main__":
     trainer = FactorVAETrainer(model=model,
                                loss_func=loss_func,
                                optimizer=optimizer)
-    trainer.load_dataset(train_set=train_set, val_set=val_set)
+    trainer.load_dataset(train_set=train_set, val_set=val_set, shuffle=args.shuffle)
     if args.checkpoint_path is not None:
         trainer.load_checkpoint(args.checkpoint_path)
     trainer.set_configs(max_epoches=args.max_epoches,
@@ -276,4 +306,8 @@ if __name__ == "__main__":
     logging.info("Training start...")
     trainer.train()
     logging.info("Training complete.")
+
+# python train.py --log_folder "D:\PycharmProjects\SWHY\log\FactorVAE" --log_name "Model1.txt" --dataset_path "D:\PycharmProjects\SWHY\data\preprocess\dataset.pt" --input_size 101 --num_gru_layers 4 --gru_hidden_size 32 --hidden_size 8 --latent_size 2 --save_folder "D:\PycharmProjects\SWHY\model\factor-vae\model1" --save_name "model1" --save_format ".pt" --sample_per_batch 100
+
+# python train.py --log_folder "D:\PycharmProjects\SWHY\log\FactorVAE" --log_name "Model4.txt" --dataset_path "D:\PycharmProjects\SWHY\data\preprocess\dataset_cs_zscore.pt" --input_size 101 --num_gru_layers 2 --gru_hidden_size 32 --hidden_size 16 --latent_size 4 --save_folder "D:\PycharmProjects\SWHY\model\factor-vae\model1" --save_name "model4" --save_format ".pt" --sample_per_batch 200
 

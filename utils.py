@@ -1,8 +1,20 @@
+import argparse
+from typing import Callable
+from collections import OrderedDict
+
 import torch
 import torch.nn as nn
 
-from typing import Callable
-from collections import OrderedDict
+
+def str2bool(value):
+    if isinstance(value, bool):
+        return value
+    if value.lower() in {'false', '0', 'no', 'n', 'f'}:
+        return False
+    elif value.lower() in {'true', '1', 'yes', 'y', 't'}:
+        return True
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def module_weight_init(module:nn.Module, initializer:Callable, generator:torch.Generator=None):
     if isinstance(module, (nn.Linear, nn.Conv2d, nn.GRU)):
